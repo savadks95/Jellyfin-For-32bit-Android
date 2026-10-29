@@ -1,0 +1,3 @@
+# scripts run in Termux/Linux: always Unix line endings, even when cloned on Windows
+* text=auto eol=lf
+*.armhf binary
