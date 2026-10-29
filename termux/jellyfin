@@ -1,0 +1,122 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Controls Jellyfin running in the 32-bit Debian environment. Installed by install.sh.
+#   jellyfin start | stop | restart | status | logs | run
+DISTRO="${JF_DISTRO:-debian}"
+PORT=8096
+STATE="$HOME/.jellyfin-redmi9"
+CONSOLE="$STATE/console.log"
+PROOT_PID="$STATE/proot.pid"
+mkdir -p "$STATE"
+
+http_ok() {
+    [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$PORT/System/Info/Public")" = "200" ]
+}
+
+proot_alive() {
+    [ -f "$PROOT_PID" ] && kill -0 "$(cat "$PROOT_PID")" 2>/dev/null
+}
+
+# the server process itself is visible to Termux (proot has no PID namespace)
+server_running() {
+    ps -eo args 2>/dev/null | grep -q "^/opt/jellyfin/jellyfin "
+}
+
+alive() {
+    proot_alive || server_running
+}
+
+server_pid() {
+    proot-distro login "$DISTRO" -- cat /var/lib/jellyfin/jellyfin.pid 2>/dev/null | tr -dc '0-9'
+}
+
+addresses() {
+    ip -4 -o addr show 2>/dev/null | awk '$2 != "lo" { split($4, a, "/"); print "  http://" a[1] ":'$PORT'" }'
+    echo "  http://127.0.0.1:$PORT (on this phone)"
+}
+
+start() {
+    if alive || http_ok; then
+        echo "Jellyfin is already running."
+        addresses
+        return 0
+    fi
+    # keep the CPU awake while serving; Android otherwise freezes Termux when the screen is off
+    command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock
+    nohup proot-distro login "$DISTRO" -- /usr/local/bin/jellyfin-run > "$CONSOLE" 2>&1 &
+    echo $! > "$PROOT_PID"
+    printf 'Starting Jellyfin'
+    i=0
+    misses=0
+    while [ $i -lt 240 ]; do
+        if http_ok; then
+            echo " - ready."
+            echo "Open one of these addresses:"
+            addresses
+            return 0
+        fi
+        # only give up after several checks: right after launch neither process may be visible yet
+        if alive; then
+            misses=0
+        else
+            misses=$((misses + 1))
+        fi
+        if [ $misses -ge 3 ]; then
+            echo " - it stopped. Last lines of $CONSOLE:"
+            tail -n 30 "$CONSOLE"
+            return 1
+        fi
+        printf '.'
+        sleep 2
+        i=$((i + 2))
+    done
+    echo " - still starting (first start and database migrations can take several minutes)."
+    echo "Follow progress with: jellyfin logs"
+}
+
+stop() {
+    pid="$(server_pid)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        printf 'Stopping Jellyfin'
+        kill -TERM "$pid"
+        i=0
+        while kill -0 "$pid" 2>/dev/null && [ $i -lt 30 ]; do
+            printf '.'
+            sleep 1
+            i=$((i + 1))
+        done
+        kill -0 "$pid" 2>/dev/null && kill -KILL "$pid"
+        echo " - stopped."
+    elif server_running; then
+        # no pid file (e.g. started by hand): find the process instead
+        for p in $(ps -eo pid,args | awk '$2 == "/opt/jellyfin/jellyfin" { print $1 }'); do kill -TERM "$p"; done
+        sleep 5
+        echo "Stopped."
+    else
+        echo "Jellyfin is not running."
+    fi
+    proot_alive && kill "$(cat "$PROOT_PID")" 2>/dev/null
+    rm -f "$PROOT_PID"
+    command -v termux-wake-unlock >/dev/null 2>&1 && termux-wake-unlock
+    return 0
+}
+
+case "$1" in
+    start) start ;;
+    stop) stop ;;
+    restart) stop; start ;;
+    status)
+        if http_ok; then
+            echo "Jellyfin is running."
+            addresses
+        elif alive; then
+            echo "Jellyfin is starting (or stuck). See: jellyfin logs"
+        else
+            echo "Jellyfin is not running. Start it with: jellyfin start"
+        fi ;;
+    logs) tail -n 100 -f "$CONSOLE" ;;
+    run) exec proot-distro login "$DISTRO" -- /usr/local/bin/jellyfin-run ;;
+    *)
+        echo "usage: jellyfin start | stop | restart | status | logs | run"
+        echo "  run   = start in the foreground (Ctrl+C stops it)"
+        exit 1 ;;
+esac

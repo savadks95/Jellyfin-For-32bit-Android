@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phone-friendly transcoding defaults for Jellyfin on a Redmi 9 (Helio G80, 32-bit software).
+     Only written on first install; change later in Dashboard > Playback > Transcoding.
+     Elements not listed keep Jellyfin's own defaults. -->
+<EncodingOptions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <EncodingThreadCount>-1</EncodingThreadCount>
+  <EnableThrottling>true</EnableThrottling>
+  <ThrottleDelaySeconds>120</ThrottleDelaySeconds>
+  <EnableSegmentDeletion>true</EnableSegmentDeletion>
+  <SegmentKeepSeconds>600</SegmentKeepSeconds>
+  <EncoderPreset>superfast</EncoderPreset>
+  <H264Crf>25</H264Crf>
+  <AllowHevcEncoding>false</AllowHevcEncoding>
+  <AllowAv1Encoding>false</AllowAv1Encoding>
+  <EnableTonemapping>false</EnableTonemapping>
+  <EnableHardwareEncoding>false</EnableHardwareEncoding>
+</EncodingOptions>

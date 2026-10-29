@@ -1,0 +1,29 @@
+#!/bin/sh
+# Starts Jellyfin inside the 32-bit Debian environment (foreground).
+
+# .NET on 32-bit ARM tries to reserve a large GC heap range and fails under Android/proot
+# ("GC heap initialization failed with error 0x8007000E"). Cap it; the value is hex:
+# 30000000 = 768 MB. Override with JELLYFIN_HEAP_HEX (e.g. 20000000 = 512 MB on a 3 GB phone).
+export DOTNET_GCHeapHardLimit="${JELLYFIN_HEAP_HEX:-30000000}"
+# Non-concurrent GC: less memory and fewer threads on a phone.
+export DOTNET_gcConcurrent=0
+# W^X double-mapping uses memfd, which proot and Android's SELinux handle poorly.
+export DOTNET_EnableWriteXorExecute=0
+export DOTNET_CLI_TELEMETRY_OPTOUT=1
+export TMPDIR=/var/lib/jellyfin/cache/tmp
+mkdir -p "$TMPDIR"
+
+# exec keeps this PID for Jellyfin; proot has no PID namespace, so Termux can signal it
+echo $$ > /var/lib/jellyfin/jellyfin.pid
+
+# --nonetchange: Android does not let apps watch network interfaces; without it Jellyfin
+# logs "Permission denied" and can fail to start.
+exec /opt/jellyfin/jellyfin \
+    --datadir /var/lib/jellyfin/data \
+    --configdir /var/lib/jellyfin/config \
+    --cachedir /var/lib/jellyfin/cache \
+    --logdir /var/lib/jellyfin/log \
+    --webdir /opt/jellyfin/jellyfin-web \
+    --ffmpeg /usr/bin/ffmpeg \
+    --nonetchange \
+    "$@"
